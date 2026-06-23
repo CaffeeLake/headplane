@@ -5,6 +5,7 @@ import { data, isRouteErrorResponse, type ShouldRevalidateFunction } from "react
 import Button from "~/components/button";
 import Card from "~/components/card";
 import Code from "~/components/code";
+import { agentsContext, appConfigContext, requestApiContext } from "~/server/context";
 import { findHeadscaleUserBySubject } from "~/server/web/headscale-identity";
 
 import type { Route } from "./+types/page";
@@ -16,13 +17,18 @@ import { loadHeadplaneWASM } from "./wasm.client";
 
 const WASM_MODULE_URL = `${__PREFIX__}/hp_ssh.wasm`;
 const WASM_HELPER_URL = `${__PREFIX__}/wasm_exec.js`;
+const SSH_PREAUTH_KEY_TTL_MS = 10 * 60 * 1000;
 
 export const shouldRevalidate: ShouldRevalidateFunction = () => {
   return false;
 };
 
-export async function loader({ request, params, context }: Route.LoaderArgs) {
-  const origin = new URL(request.url).origin;
+export async function loader({ request, params, context, url }: Route.LoaderArgs) {
+  const agents = context.get(agentsContext);
+  const config = context.get(appConfigContext);
+  const getRequestApi = context.get(requestApiContext);
+
+  const origin = url.origin;
   const assets = [WASM_HELPER_URL, WASM_MODULE_URL];
   const missing: string[] = [];
 
@@ -37,17 +43,17 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
     throw data(sshErrors.wasm_missing, 405);
   }
 
-  if (context.agents.state !== "enabled") {
+  if (agents.state !== "enabled") {
     throw data(sshErrors.agent_required, 400);
   }
 
-  const { principal, api } = await context.apiForRequest(request);
+  const { principal, api } = await getRequestApi(request);
   if (principal.kind === "api_key") {
     throw data(sshErrors.oidc_required, 403);
   }
 
   const hostname = params.id;
-  const username = new URL(request.url).searchParams.get("user") || undefined;
+  const username = url.searchParams.get("user") || undefined;
 
   const nodes = await api.nodes.list();
   const node = nodes.find((n) => n.givenName === hostname);
@@ -65,7 +71,9 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 
   // The user must exist within Headscale to generate a pre-auth key
   const users = await api.users.list();
-  const hsUser = findHeadscaleUserBySubject(users, principal.user.subject, principal.profile.email);
+  const hsUser = principal.user.headscaleUserId
+    ? users.find((u) => u.id === principal.user.headscaleUserId)
+    : findHeadscaleUserBySubject(users, principal.user.subject, principal.profile.email);
 
   if (!hsUser) {
     throw data(sshErrors.user_not_linked, 404);
@@ -75,11 +83,11 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
     user: hsUser.id,
     ephemeral: true,
     reusable: false,
-    expiration: new Date(Date.now() + 60 * 1000), // 1 minute expiry
+    expiration: new Date(Date.now() + SSH_PREAUTH_KEY_TTL_MS),
     aclTags: null,
   });
 
-  const controlURL = context.config.headscale.public_url ?? context.config.headscale.url;
+  const controlURL = config.headscale.public_url ?? config.headscale.url;
   return {
     hostname,
     username,
@@ -173,7 +181,12 @@ function SSHConsole({
             setSsh(instance);
           }
         },
-        onError: (msg) => console.error("[ssh] IPN error:", msg),
+        onError: (msg) => {
+          console.error("[ssh] IPN error:", msg);
+          if (!cancelled) {
+            setStatus(`Failed to join Tailnet: ${msg}`);
+          }
+        },
       });
 
       console.log("[ssh] IPN instance created", instance);

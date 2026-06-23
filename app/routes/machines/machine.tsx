@@ -9,10 +9,17 @@ import Chip from "~/components/chip";
 import Link from "~/components/link";
 import StatusCircle from "~/components/status-circle";
 import Tooltip from "~/components/tooltip";
+import {
+  agentsContext,
+  headscaleConfigContext,
+  headscaleContext,
+  headscaleLiveStoreContext,
+  requestApiContext,
+} from "~/server/context";
 import { nodesResource, usersResource } from "~/server/headscale/live-store";
 import cn from "~/utils/cn";
 import { getOSInfo, getTSVersion } from "~/utils/host-info";
-import { isNoExpiry, mapNodes, sortNodeTags } from "~/utils/node-info";
+import { isNoExpiry, mapNodes, sortAssignableTags } from "~/utils/node-info";
 import { getUserDisplayName } from "~/utils/user";
 
 import type { Route } from "./+types/machine";
@@ -22,6 +29,12 @@ import Routes from "./dialogs/routes";
 import { machineAction } from "./machine-actions";
 
 export async function loader({ request, params, context }: Route.LoaderArgs) {
+  const agentsFeature = context.get(agentsContext);
+  const getRequestApi = context.get(requestApiContext);
+  const headscale = context.get(headscaleContext);
+  const headscaleConfig = context.get(headscaleConfigContext);
+  const headscaleLiveStore = context.get(headscaleLiveStoreContext);
+
   if (!params.id) {
     throw new Error("No machine ID provided");
   }
@@ -30,17 +43,12 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
     throw data(null, { status: 204 });
   }
 
-  let magic: string | undefined;
-  if (context.hs.readable()) {
-    if (context.hs.c?.dns.magic_dns) {
-      magic = context.hs.c.dns.base_domain;
-    }
-  }
+  const magic = headscaleConfig.getMagicDNSBaseDomain();
 
-  const { api } = await context.apiForRequest(request);
+  const { api } = await getRequestApi(request);
   const [nodesSnap, usersSnap] = await Promise.all([
-    context.hsLive.get(nodesResource, api),
-    context.hsLive.get(usersResource, api),
+    headscaleLiveStore.get(nodesResource, api),
+    headscaleLiveStore.get(usersResource, api),
   ]);
   const nodes = nodesSnap.data;
   const users = usersSnap.data;
@@ -49,12 +57,17 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
     throw data(null, { status: 404 });
   }
 
-  const agents = context.agents.state === "enabled" ? context.agents.value : undefined;
-  const lookup = await agents?.lookup([node.nodeKey]);
-  const [enhancedNode] = mapNodes([node], lookup);
+  const agents = agentsFeature.state === "enabled" ? agentsFeature.value : undefined;
+  const [lookup, policyResult] = await Promise.allSettled([
+    agents?.lookup([node.nodeKey]),
+    api.policy.get(),
+  ]);
+  const stats = lookup.status === "fulfilled" ? lookup.value : undefined;
+  const [enhancedNode] = mapNodes([node], stats);
   const tags = [...node.tags].toSorted();
-  const supportsNodeOwnerChange = !context.headscale.capabilities.nodeOwnerIsImmutable;
+  const supportsNodeOwnerChange = !headscale.capabilities.nodeOwnerIsImmutable;
   const agentSync = agents?.lastSync();
+  const policy = policyResult.status === "fulfilled" ? policyResult.value.policy : undefined;
 
   return {
     agent: agentSync
@@ -64,10 +77,10 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
           nodeKey: agents?.agentNodeKey(),
         }
       : undefined,
-    existingTags: sortNodeTags(nodes),
+    existingTags: sortAssignableTags(nodes, policy),
     magic,
     node: enhancedNode,
-    stats: lookup?.[enhancedNode.nodeKey],
+    stats: stats?.[enhancedNode.nodeKey],
     supportsNodeOwnerChange: supportsNodeOwnerChange,
     tags,
     users,

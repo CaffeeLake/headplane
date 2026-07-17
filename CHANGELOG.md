@@ -1,5 +1,9 @@
 # Next
 
+- Fixed the Headplane agent falling back to an interactive Tailscale login. The agent now starts with a pre-auth-key, preserves its existing state across restarts, and auto-approves itself when Headscale requires manual approval (closes [#582](https://github.com/tale/headplane/issues/582)).
+
+# 0.7.0
+
 - Switched to structured JSON logging (closes [#279](https://github.com/tale/headplane/issues/279)).
 - Added suggestions to pick existing tags to the machine tag dialog (closes [#560](https://github.com/tale/headplane/issues/560)).
 - Headplane correctly handles `dns.extra_records_path` from the Headscale configuration (closes [#543](https://github.com/tale/headplane/issues/543)).
@@ -12,6 +16,8 @@
 - Added automatic role assignment for new OIDC users via `oidc.default_role` and IdP-provided role claims via `oidc.role_claim` (closes [#352](https://github.com/tale/headplane/issues/352)).
 - Fixed the DNS page crashing when Headscale has no Split DNS nameservers configured (closes [#570](https://github.com/tale/headplane/issues/570)).
 - User lists now show Headscale display names while preserving usernames as secondary text (closes [#571](https://github.com/tale/headplane/issues/571)).
+- Fixed the Register Machine Key dialog so it accepts registration URLs and full `hskey-authreq-...` registration keys (closes [#579](https://github.com/tale/headplane/issues/579)).
+- Fixed assigning ACL tags to tag-only (no-user) nodes from the UI. The "Add" and "Remove" tag buttons in the tag dialog lacked `type="button"`, so clicking them submitted the form before the local state update was applied and Headscale received the unchanged tag list. Tag modifications now reach Headscale as intended (closes [#574](https://github.com/tale/headplane/issues/574)).
 
 ---
 

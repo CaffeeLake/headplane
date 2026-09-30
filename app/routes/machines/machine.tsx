@@ -19,7 +19,7 @@ import {
 import { nodesResource, usersResource } from "~/server/headscale/live-store";
 import cn from "~/utils/cn";
 import { getOSInfo, getTSVersion } from "~/utils/host-info";
-import { isNoExpiry, mapNodes, sortAssignableTags } from "~/utils/node-info";
+import { extractTagOwnerTags, isNoExpiry, mapNodes, sortAssignableTags } from "~/utils/node-info";
 import { getUserDisplayName } from "~/utils/user";
 
 import type { Route } from "./+types/machine";
@@ -66,6 +66,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
   const [enhancedNode] = mapNodes([node], stats);
   const tags = [...node.tags].toSorted();
   const supportsNodeOwnerChange = !headscale.capabilities.nodeOwnerIsImmutable;
+  const supportsDisablingKeyExpiry = headscale.capabilities.keyExpiryCanBeDisabled;
   const agentSync = agents?.lastSync();
   const policy = policyResult.status === "fulfilled" ? policyResult.value.policy : undefined;
 
@@ -78,10 +79,13 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
         }
       : undefined,
     existingTags: sortAssignableTags(nodes, policy),
+    // `undefined` keeps the tag dialog from flagging every tag as undeclared.
+    policyTags: extractTagOwnerTags(policy),
     magic,
     node: enhancedNode,
     stats: stats?.[enhancedNode.nodeKey],
     supportsNodeOwnerChange: supportsNodeOwnerChange,
+    supportsDisablingKeyExpiry: supportsDisablingKeyExpiry,
     tags,
     users,
   };
@@ -90,7 +94,18 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 export const action = machineAction;
 
 export default function Page({
-  loaderData: { node, tags, users, magic, agent, stats, existingTags, supportsNodeOwnerChange },
+  loaderData: {
+    node,
+    tags,
+    users,
+    magic,
+    agent,
+    stats,
+    existingTags,
+    policyTags,
+    supportsNodeOwnerChange,
+    supportsDisablingKeyExpiry,
+  },
 }: Route.ComponentProps) {
   const [showRouting, setShowRouting] = useState(false);
 
@@ -120,11 +135,13 @@ export default function Page({
         </span>
         <MenuOptions
           existingTags={existingTags}
+          policyTags={policyTags}
           isFullButton
           magic={magic}
           node={node}
           users={users}
           supportsNodeOwnerChange={supportsNodeOwnerChange}
+          supportsDisablingKeyExpiry={supportsDisablingKeyExpiry}
         />
       </div>
       <div className="mb-4 flex gap-1">

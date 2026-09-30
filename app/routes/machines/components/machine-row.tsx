@@ -12,6 +12,7 @@ import { SubnetTag } from "~/components/tags/Subnet";
 import { TailscaleSSHTag } from "~/components/tags/TailscaleSSH";
 import type { User } from "~/types";
 import cn from "~/utils/cn";
+import { copyToClipboard } from "~/utils/copy";
 import * as hinfo from "~/utils/host-info";
 import { isNoExpiry, type PopulatedNode } from "~/utils/node-info";
 import { formatTimeDelta } from "~/utils/time";
@@ -27,7 +28,9 @@ interface Props {
   magic?: string;
   isDisabled?: boolean;
   existingTags?: string[];
+  policyTags?: string[];
   supportsNodeOwnerChange: boolean;
+  supportsDisablingKeyExpiry: boolean;
 }
 
 export default function MachineRow({
@@ -37,7 +40,9 @@ export default function MachineRow({
   magic,
   isDisabled,
   existingTags,
+  policyTags,
   supportsNodeOwnerChange,
+  supportsDisablingKeyExpiry,
 }: Props) {
   const uiTags = useMemo(() => uiTagsForNode(node, isAgent), [node, isAgent]);
 
@@ -85,8 +90,12 @@ export default function MachineRow({
                 <MenuItem
                   key={ip}
                   onClick={async () => {
-                    await navigator.clipboard.writeText(ip);
-                    toast("Copied IP address to clipboard");
+                    const isCopied = await copyToClipboard(ip);
+                    toast(
+                      isCopied
+                        ? "Copied IP address to clipboard"
+                        : "Copy failed. Please copy the address manually.",
+                    );
                   }}
                 >
                   <div
@@ -139,11 +148,13 @@ export default function MachineRow({
       <td className="py-2 pr-0.5">
         <MenuOptions
           existingTags={existingTags}
+          policyTags={policyTags}
           isDisabled={isDisabled}
           magic={magic}
           node={node}
           users={users}
           supportsNodeOwnerChange={supportsNodeOwnerChange}
+          supportsDisablingKeyExpiry={supportsDisablingKeyExpiry}
         />
       </td>
     </tr>

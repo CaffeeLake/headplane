@@ -1,9 +1,10 @@
 import * as v from "valibot";
 
-import { authContext, requestApiContext } from "~/server/context";
+import { authContext, headscaleContext, requestApiContext } from "~/server/context";
 import { isDataWithApiError } from "~/server/headscale/api/error-client";
 import { ActionError, createAction } from "~/server/web/actions";
 import { Capabilities } from "~/server/web/roles";
+import { parsePolicy } from "~/utils/acl-policy";
 import { invalid, ok } from "~/utils/form";
 
 // Headscale prefixes policy parse errors with one of these, for HuJSON syntax
@@ -15,12 +16,31 @@ export const aclAction = createAction({
   async setup({ request, context }) {
     const principal = await context.get(authContext).require(request);
     const { api } = await context.get(requestApiContext)(request);
-    return { principal, api };
+    const { capabilities } = context.get(headscaleContext);
+    return { principal, api, capabilities };
   },
   intents: {
     save: {
-      fields: { policy: v.pipe(v.string(), v.nonEmpty("The policy can't be empty.")) },
-      async handler(input, { api }) {
+      fields: {
+        policy: v.pipe(
+          v.string(),
+          v.check((value) => value.trim().length > 0, "The policy can't be empty."),
+        ),
+      },
+      async handler(input, { api, capabilities }) {
+        const parsed = parsePolicy(input.policy);
+        if (!parsed.ok) {
+          return invalid({ form: `Syntax error: ${parsed.error}` });
+        }
+
+        // Older Headscale only says `unknown field "grants"`.
+        const hasGrants = parsed.policy.keyOrder.includes("grants");
+        if (hasGrants && !capabilities.policySupportsGrants) {
+          throw new ActionError(
+            "Grants need Headscale 0.29 or newer. Remove the `grants` section or upgrade Headscale.",
+          );
+        }
+
         try {
           await api.policy.set(input.policy);
         } catch (error) {

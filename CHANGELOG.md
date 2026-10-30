@@ -6,9 +6,11 @@
 - The `proc` and `kubernetes` integrations now restart Headscale instead of reloading it, so Headscale needs a supervisor that brings it back: systemd with `Restart=always`, which Headscale's own unit and the NixOS module already set, or the kubelet.
 - Enabling more than one integration now turns them all off, with an error in the log. Keep one.
 - After signing in with single sign-on, only owners, admins and IT admins can pick which Headscale user their account links to. Everyone else links automatically or is linked from the **Users** page.
+- Builds no longer read `__INTERNAL_PREFIX`. If a build used it to serve Headplane somewhere other than `/admin`, set `server.base_path` to that path instead.
 
 ## Changes
 
+- Headplane can be served under a path other than `/admin` by setting `server.base_path`, without building it from source (closes [#637](https://github.com/tale/headplane/issues/637)).
 - Headplane has a new color palette built from its logo: warm greys, black primary buttons, and a muted blue that marks links, focus, and the current page. Dark mode now separates the page, menus, and dialogs by shade so overlays stand out, and secondary text is easier to read in both themes (via [#651](https://github.com/tale/headplane/issues/651)).
 - Dialogs can now be closed by clicking outside them, except the ones that confirm a destructive action like removing a machine.
 - The navigation bar is slimmer, and on small screens the pages now live in a menu instead of a second row of tabs.
@@ -30,9 +32,13 @@
 - Browser SSH's username prompt, offline machine page, and error pages use the sign-in layout, with shorter error messages that link straight to the matching troubleshooting section.
 - Open pages notice within a few seconds when Headscale goes down or comes back, and update on their own. The "Can't reach Headscale" banner and error pages clear without a reload.
 - When the Headscale configuration is writable but no integration is set up to restart Headscale, the DNS and sign-in restrictions pages now say that changes only take effect once Headscale restarts.
+- The **Rules** tab on the Access Control page can now edit grants and auto approvers. Grants set ports and protocols separately from the destination, can route traffic through tagged subnet routers or exit nodes with `via`, and keep app capabilities as written. Grants need Headscale 0.29 or newer. Auto approvers cover both subnet routes and exit nodes.
+- The Access Control file editor now formats HuJSON, preserves comments while formatting, and shows syntax errors before an invalid policy can be saved.
 
 ## Fixes
 
+- Saving from the Rules or Tags & Groups tabs no longer drops the comma from text like `,}` or `,]` inside a policy value.
+- Live updates work again right after signing in. Previously the machines list and other pages only refreshed on their own after a full page reload.
 - Changes to DNS settings and sign-in restrictions now actually apply with the `proc` and `kubernetes` integrations. Both sent `SIGHUP`, which only makes Headscale reload its ACL policy. They now stop Headscale with `SIGTERM` and wait for systemd or Kubernetes to restart it, so Headscale needs a supervisor that restarts it.
 - If Headscale doesn't come back after a change, Headplane now shows an error instead of reporting success.
 - Enabling two integrations at once is now caught at startup. Previously Headplane only refused when all three were on, and otherwise silently picked Docker.

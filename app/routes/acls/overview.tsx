@@ -40,7 +40,7 @@ export const action = aclAction;
 export const clientAction = toastClientAction;
 
 export default function Page({
-  loaderData: { access, writable, policy, users, tagUsage },
+  loaderData: { access, writable, canEditGrants, policy, users, tagUsage },
 }: Route.ComponentProps) {
   const [codePolicy, setCodePolicy] = useState(policy);
   const [savedPolicy, setSavedPolicy] = useState(policy);
@@ -170,6 +170,7 @@ export default function Page({
         <TabsPanel value="rules">
           {structuredPanel((value) => (
             <RulesEditor
+              canEditGrants={canEditGrants}
               destinations={destinations}
               isDisabled={disabled}
               onChange={applyPolicy}
@@ -212,7 +213,11 @@ export default function Page({
       <Button
         className="mr-2"
         disabled={
-          disabled || fetcher.state !== "idle" || codePolicy.length === 0 || codePolicy === policy
+          disabled ||
+          fetcher.state !== "idle" ||
+          codePolicy.trim().length === 0 ||
+          !parsed.ok ||
+          codePolicy === policy
         }
         onClick={() => {
           fetcher.submit({ intent: "save", policy: codePolicy }, { method: "POST" });

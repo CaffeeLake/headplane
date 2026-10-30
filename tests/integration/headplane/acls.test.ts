@@ -56,7 +56,7 @@ describe("the ACL policy on a real tailnet", () => {
 
     expect(statusOf(result)).toBe(400);
     expect(result).toMatchObject({
-      data: { errors: { form: expect.stringMatching(/^Syntax error: hujson: line 1, column 11/) } },
+      data: { errors: { form: expect.stringMatching(/^Syntax error: .* at line 1, column 11$/) } },
     });
     expect(await tailnet.api.policy.get()).toEqual(before);
   });
@@ -110,6 +110,23 @@ describe.for(testedVersions())("where Headscale %s keeps the policy", (version) 
 
     const path = join(dirname(tailnet.server.configPath), "policy.json");
     expect(await readFile(path, "utf8")).toBe(file);
+  });
+
+  test("grants save, or are refused with the Headscale version they need", async () => {
+    const { tailnet, save } = await open({});
+    await using _ = tailnet;
+
+    const result = await save('{"grants":[{"src":["*"],"dst":["*"],"ip":["*"]}]}');
+
+    if (tailnet.headscale.capabilities.policySupportsGrants) {
+      expect(statusOf(result)).toBe(200);
+      return;
+    }
+
+    expect(statusOf(result)).toBe(400);
+    expect(result).toMatchObject({
+      data: { errors: { form: expect.stringContaining("Grants need Headscale 0.29 or newer.") } },
+    });
   });
 
   // Headscale's default configuration.
